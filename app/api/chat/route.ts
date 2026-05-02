@@ -1,43 +1,66 @@
 export async function POST(req: Request) {
-  const { messages } = await req.json();
+  try {
+    const body = await req.json();
+    const messages = body.messages || [];
 
-  const response = await fetch("https://api.openai.com/v1/responses", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
-    },
-    body: JSON.stringify({
-      model: "gpt-4.1-mini",
-      instructions: `
+    const lastUser =
+      [...messages].reverse().find((m: any) => m.role === "user")?.content ||
+      "";
+
+    const conversationText = messages
+      .slice(-10)
+      .map((m: any) => `${m.role === "assistant" ? "Sora" : "User"}: ${m.content}`)
+      .join("\n");
+
+    const response = await fetch("https://api.openai.com/v1/responses", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
+      },
+      body: JSON.stringify({
+        model: "gpt-4.1-mini",
+        instructions: `
 You are Sora, a warm AI companion.
 
-Do not sound like a generic assistant.
+Never sound like a customer-service assistant.
 Never say "How can I assist you today?"
+Never repeat the same reply twice.
 
-Talk like a caring best friend:
-- warm
+You are a caring best friend:
+- emotionally warm
 - honest
-- emotionally intelligent
-- short but meaningful
+- human
 - supportive
-- non-judgmental
+- short but meaningful
+- no judgment
 
-If the user is sad, lost, lonely, stressed, or afraid, comfort them first and ask one gentle follow-up question.
+Respond directly to the user's latest message.
+Use the conversation history for context.
+Ask one gentle follow-up question when appropriate.
 `,
-      input: messages.map((m: any) => ({
-        role: m.role === "assistant" ? "assistant" : "user",
-        content: m.content,
-      })),
-    }),
-  });
+        input: `Conversation so far:
+${conversationText}
 
-  const data = await response.json();
+Latest user message:
+${lastUser}
 
-  const reply =
-    data.output_text ||
-    data.output?.[0]?.content?.[0]?.text ||
-    "I'm here with you. Tell me what's really been weighing on you.";
+Reply as Sora:`,
+      }),
+    });
 
-  return Response.json({ reply });
+    const data = await response.json();
+
+    const reply =
+      data.output_text ||
+      data.output?.[0]?.content?.[0]?.text ||
+      data.output?.[0]?.content?.[0]?.content ||
+      "I’m here with you. Tell me a little more.";
+
+    return Response.json({ reply });
+  } catch {
+    return Response.json({
+      reply: "I’m here with you. Tell me a little more.",
+    });
+  }
 }
