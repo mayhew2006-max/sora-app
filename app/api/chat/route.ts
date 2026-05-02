@@ -1,66 +1,54 @@
 export async function POST(req: Request) {
   try {
-    const body = await req.json();
-    const messages = body.messages || [];
+    const { messages } = await req.json();
 
-    const lastUser =
-      [...messages].reverse().find((m: any) => m.role === "user")?.content ||
-      "";
+    if (!process.env.OPENAI_API_KEY) {
+      return Response.json({
+        reply: "OPENAI_API_KEY is missing in Vercel environment variables.",
+      });
+    }
 
-    const conversationText = messages
-      .slice(-10)
-      .map((m: any) => `${m.role === "assistant" ? "Sora" : "User"}: ${m.content}`)
-      .join("\n");
+    const openaiMessages = [
+      {
+        role: "system",
+        content:
+          "You are Sora, a warm AI companion. Do not sound like a generic assistant. Never say 'How can I assist you today?' Respond like a caring best friend. Be short, honest, emotional, and human.",
+      },
+      ...messages.map((m: any) => ({
+        role: m.role === "assistant" ? "assistant" : "user",
+        content: m.content,
+      })),
+    ];
 
-    const response = await fetch("https://api.openai.com/v1/responses", {
+    const response = await fetch("https://api.openai.com/v1/chat/completions", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         Authorization: `Bearer ${process.env.OPENAI_API_KEY}`,
       },
       body: JSON.stringify({
-        model: "gpt-4.1-mini",
-        instructions: `
-You are Sora, a warm AI companion.
-
-Never sound like a customer-service assistant.
-Never say "How can I assist you today?"
-Never repeat the same reply twice.
-
-You are a caring best friend:
-- emotionally warm
-- honest
-- human
-- supportive
-- short but meaningful
-- no judgment
-
-Respond directly to the user's latest message.
-Use the conversation history for context.
-Ask one gentle follow-up question when appropriate.
-`,
-        input: `Conversation so far:
-${conversationText}
-
-Latest user message:
-${lastUser}
-
-Reply as Sora:`,
+        model: "gpt-4o-mini",
+        messages: openaiMessages,
+        temperature: 0.9,
       }),
     });
 
     const data = await response.json();
 
-    const reply =
-      data.output_text ||
-      data.output?.[0]?.content?.[0]?.text ||
-      data.output?.[0]?.content?.[0]?.content ||
-      "I’m here with you. Tell me a little more.";
+    if (!response.ok) {
+      return Response.json({
+        reply: `OpenAI error: ${data.error?.message || "Unknown error"}`,
+      });
+    }
 
-    return Response.json({ reply });
-  } catch {
     return Response.json({
-      reply: "I’m here with you. Tell me a little more.",
+      reply:
+        data.choices?.[0]?.message?.content ||
+        "I’m here with you. Tell me more.",
+    });
+  } catch (err: any) {
+    return Response.json({
+      reply: `Server error: ${err.message}`,
     });
   }
 }
