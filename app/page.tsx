@@ -1,30 +1,59 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useState } from "react";
+
+const STRIPE_LINK = "https://buy.stripe.com/14A3cw1AZfbD2bM6Pc1gs00";
+const FREE_LIMIT = 20;
+
+type Message = {
+  role: "user" | "assistant";
+  content: string;
+};
 
 export default function Home() {
-  const [messages, setMessages] = useState([
-    { role: "assistant", content: "Hey, I'm here. What's on your mind?" }
+  const [messages, setMessages] = useState<Message[]>([
+    { role: "assistant", content: "Hey, I'm here. What's on your mind?" },
   ]);
   const [input, setInput] = useState("");
+  const [voiceOn, setVoiceOn] = useState(true);
+  const [paid, setPaid] = useState(false);
 
-  // 🧠 Load memory on start
   useEffect(() => {
     const saved = localStorage.getItem("sora_messages");
-    if (saved) {
-      setMessages(JSON.parse(saved));
-    }
+    const paidSaved = localStorage.getItem("sora_paid");
+
+    if (saved) setMessages(JSON.parse(saved));
+    if (paidSaved === "true") setPaid(true);
   }, []);
 
-  // 💾 Save memory every time messages change
   useEffect(() => {
     localStorage.setItem("sora_messages", JSON.stringify(messages));
   }, [messages]);
 
-  const sendMessage = async () => {
-    if (!input) return;
+  const userMessages = messages.filter((m) => m.role === "user").length;
+  const freeLeft = Math.max(FREE_LIMIT - userMessages, 0);
+  const locked = !paid && freeLeft <= 0;
 
-    const newMessages = [...messages, { role: "user", content: input }];
+  function speak(text: string) {
+    if (!voiceOn) return;
+    const utterance = new SpeechSynthesisUtterance(text);
+    utterance.rate = 0.95;
+    utterance.pitch = 1;
+    speechSynthesis.cancel();
+    speechSynthesis.speak(utterance);
+  }
+
+  async function sendMessage() {
+    const text = input.trim();
+    if (!text) return;
+
+    if (locked) return;
+
+    const newMessages: Message[] = [
+      ...messages,
+      { role: "user", content: text },
+    ];
+
     setMessages(newMessages);
     setInput("");
 
@@ -32,58 +61,92 @@ export default function Home() {
       const res = await fetch("/api/chat", {
         method: "POST",
         body: JSON.stringify({ messages: newMessages }),
-        headers: {
-          "Content-Type": "application/json"
-        }
+        headers: { "Content-Type": "application/json" },
       });
 
       const data = await res.json();
 
-      setMessages([
-        ...newMessages,
-        { role: "assistant", content: data.reply }
-      ]);
-    } catch (err) {
-      setMessages([
-        ...newMessages,
-        { role: "assistant", content: "Something went wrong." }
-      ]);
+      const reply =
+        data.reply ||
+        "I'm here with you. Tell me what's really been weighing on you.";
+
+      setMessages([...newMessages, { role: "assistant", content: reply }]);
+      speak(reply);
+    } catch {
+      const fallback =
+        "Something glitched, but I'm still here with you. Try again.";
+      setMessages([...newMessages, { role: "assistant", content: fallback }]);
+      speak(fallback);
     }
-  };
+  }
 
   return (
-    <div className="min-h-screen bg-black text-white flex flex-col">
-      <div className="p-6 text-xl font-semibold">Sora</div>
+    <main className="min-h-screen bg-gradient-to-b from-black via-zinc-950 to-zinc-900 text-white flex flex-col">
+      <header className="p-5 border-b border-white/10 flex justify-between items-center">
+        <div>
+          <h1 className="text-3xl font-bold">Sora</h1>
+          <p className="text-sm text-zinc-400">
+            {paid ? "Premium unlocked" : `${freeLeft} free messages left`}
+          </p>
+        </div>
 
-      <div className="flex-1 overflow-y-auto px-6 space-y-4">
+        <button
+          onClick={() => setVoiceOn(!voiceOn)}
+          className="border border-white/20 px-4 py-2 rounded-full text-sm"
+        >
+          Voice {voiceOn ? "On" : "Off"}
+        </button>
+      </header>
+
+      <section className="flex-1 overflow-y-auto p-5 space-y-4">
         {messages.map((m, i) => (
           <div
             key={i}
-            className={`max-w-xl p-4 rounded-2xl ${
+            className={`max-w-2xl px-5 py-4 rounded-2xl shadow ${
               m.role === "user"
-                ? "bg-white text-black ml-auto"
-                : "bg-zinc-800"
+                ? "ml-auto bg-white text-black"
+                : "mr-auto bg-zinc-900 border border-white/10"
             }`}
           >
             {m.content}
           </div>
         ))}
-      </div>
+      </section>
 
-      <div className="p-4 flex gap-2 border-t border-zinc-800">
+      {locked && (
+        <div className="p-4 border-t border-white/10 bg-zinc-950">
+          <p className="text-center text-zinc-300 mb-3">
+            You used your free messages. Upgrade to keep talking with Sora.
+          </p>
+          <a
+            href={STRIPE_LINK}
+            className="block text-center bg-white text-black py-4 rounded-xl font-semibold"
+          >
+            Upgrade Now
+          </a>
+        </div>
+      )}
+
+      <div className="p-4 border-t border-white/10 flex gap-3">
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          placeholder="Talk to Sora..."
-          className="flex-1 p-3 rounded-xl bg-zinc-900 outline-none"
+          onKeyDown={(e) => {
+            if (e.key === "Enter") sendMessage();
+          }}
+          disabled={locked}
+          placeholder={locked ? "Upgrade to continue..." : "Talk to Sora..."}
+          className="flex-1 bg-zinc-900 border border-white/10 rounded-xl px-4 py-4 text-white outline-none disabled:opacity-50"
         />
+
         <button
           onClick={sendMessage}
-          className="bg-white text-black px-5 rounded-xl"
+          disabled={locked}
+          className="bg-white text-black rounded-xl px-6 font-semibold disabled:opacity-50"
         >
           Send
         </button>
       </div>
-    </div>
+    </main>
   );
 }
