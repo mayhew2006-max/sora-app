@@ -1,12 +1,25 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 
 export default function Home() {
   const [messages, setMessages] = useState([
     { role: "assistant", content: "Hey, I'm here. What's on your mind?" }
   ]);
   const [input, setInput] = useState("");
+
+  // 🧠 Load memory on start
+  useEffect(() => {
+    const saved = localStorage.getItem("sora_messages");
+    if (saved) {
+      setMessages(JSON.parse(saved));
+    }
+  }, []);
+
+  // 💾 Save memory every time messages change
+  useEffect(() => {
+    localStorage.setItem("sora_messages", JSON.stringify(messages));
+  }, [messages]);
 
   const sendMessage = async () => {
     if (!input) return;
@@ -15,14 +28,27 @@ export default function Home() {
     setMessages(newMessages);
     setInput("");
 
-    const res = await fetch("/api/chat", {
-      method: "POST",
-      body: JSON.stringify({ messages: newMessages })
-    });
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        body: JSON.stringify({ messages: newMessages }),
+        headers: {
+          "Content-Type": "application/json"
+        }
+      });
 
-    const data = await res.json();
+      const data = await res.json();
 
-    setMessages([...newMessages, { role: "assistant", content: data.reply }]);
+      setMessages([
+        ...newMessages,
+        { role: "assistant", content: data.reply }
+      ]);
+    } catch (err) {
+      setMessages([
+        ...newMessages,
+        { role: "assistant", content: "Something went wrong." }
+      ]);
+    }
   };
 
   return (
