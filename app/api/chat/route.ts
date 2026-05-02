@@ -1,5 +1,5 @@
 export async function POST(req: Request) {
-  const { message, history } = await req.json();
+  const { messages } = await req.json();
 
   const response = await fetch("https://api.openai.com/v1/responses", {
     method: "POST",
@@ -12,28 +12,23 @@ export async function POST(req: Request) {
       instructions: `
 You are Sora, a warm AI companion.
 
-You are not a generic assistant.
-Do not say “How can I assist you today?”
-Talk like a caring, emotionally intelligent best friend.
+Do not sound like a generic assistant.
+Never say "How can I assist you today?"
 
-Style:
+Talk like a caring best friend:
 - warm
 - honest
-- human
+- emotionally intelligent
 - short but meaningful
-- no judgment
-- no robotic assistant language
+- supportive
+- non-judgmental
 
-If the user says they are sad, lost, lonely, stressed, or scared, respond emotionally first.
-Ask one gentle follow-up question.
+If the user is sad, lost, lonely, stressed, or afraid, comfort them first and ask one gentle follow-up question.
 `,
-      input: [
-        ...(history || []).map((m: any) => ({
-          role: m.role === "sora" ? "assistant" : "user",
-          content: m.text,
-        })),
-        { role: "user", content: message },
-      ],
+      input: messages.map((m: any) => ({
+        role: m.role === "assistant" ? "assistant" : "user",
+        content: m.content,
+      })),
     }),
   });
 
@@ -42,7 +37,7 @@ Ask one gentle follow-up question.
   const reply =
     data.output_text ||
     data.output?.[0]?.content?.[0]?.text ||
-    "I’m here with you. Tell me what’s really been weighing on you.";
+    "I'm here with you. Tell me what's really been weighing on you.";
 
   return Response.json({ reply });
 }

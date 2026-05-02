@@ -17,21 +17,25 @@ export default function Home() {
   const [input, setInput] = useState("");
   const [voiceOn, setVoiceOn] = useState(true);
   const [paid, setPaid] = useState(false);
+  const [count, setCount] = useState(0);
+  const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const saved = localStorage.getItem("sora_messages");
-    const paidSaved = localStorage.getItem("sora_paid");
+    const savedMessages = localStorage.getItem("sora_messages");
+    const savedCount = localStorage.getItem("sora_count");
+    const savedPaid = localStorage.getItem("sora_paid");
 
-    if (saved) setMessages(JSON.parse(saved));
-    if (paidSaved === "true") setPaid(true);
+    if (savedMessages) setMessages(JSON.parse(savedMessages));
+    if (savedCount) setCount(Number(savedCount));
+    if (savedPaid === "true") setPaid(true);
   }, []);
 
   useEffect(() => {
     localStorage.setItem("sora_messages", JSON.stringify(messages));
-  }, [messages]);
+    localStorage.setItem("sora_count", String(count));
+  }, [messages, count]);
 
-  const userMessages = messages.filter((m) => m.role === "user").length;
-  const freeLeft = Math.max(FREE_LIMIT - userMessages, 0);
+  const freeLeft = Math.max(FREE_LIMIT - count, 0);
   const locked = !paid && freeLeft <= 0;
 
   function speak(text: string) {
@@ -45,27 +49,26 @@ export default function Home() {
 
   async function sendMessage() {
     const text = input.trim();
-    if (!text) return;
-
-    if (locked) return;
+    if (!text || loading || locked) return;
 
     const newMessages: Message[] = [
       ...messages,
       { role: "user", content: text },
     ];
 
-    setMessages(newMessages);
     setInput("");
+    setMessages(newMessages);
+    setCount((prev) => prev + 1);
+    setLoading(true);
 
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
-        body: JSON.stringify({ messages: newMessages }),
         headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages: newMessages }),
       });
 
       const data = await res.json();
-
       const reply =
         data.reply ||
         "I'm here with you. Tell me what's really been weighing on you.";
@@ -73,11 +76,12 @@ export default function Home() {
       setMessages([...newMessages, { role: "assistant", content: reply }]);
       speak(reply);
     } catch {
-      const fallback =
-        "Something glitched, but I'm still here with you. Try again.";
+      const fallback = "Something glitched, but I'm still here with you.";
       setMessages([...newMessages, { role: "assistant", content: fallback }]);
       speak(fallback);
     }
+
+    setLoading(false);
   }
 
   return (
@@ -111,6 +115,10 @@ export default function Home() {
             {m.content}
           </div>
         ))}
+
+        {loading && (
+          <div className="text-zinc-500 text-sm">Sora is thinking...</div>
+        )}
       </section>
 
       {locked && (
