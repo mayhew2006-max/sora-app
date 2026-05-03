@@ -23,7 +23,6 @@ export default function Home() {
     { role: "assistant", content: "Hey, I'm here. What's on your mind?" },
   ]);
   const [input, setInput] = useState("");
-  const [voiceOn, setVoiceOn] = useState(true);
   const [paid, setPaid] = useState(false);
   const [count, setCount] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -33,9 +32,11 @@ export default function Home() {
       setUser(data.user);
     });
 
-    supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setUser(session?.user ?? null);
+      }
+    );
 
     const savedMessages = localStorage.getItem("sora_messages");
     const savedCount = localStorage.getItem("sora_count");
@@ -44,6 +45,10 @@ export default function Home() {
     if (savedMessages) setMessages(JSON.parse(savedMessages));
     if (savedCount) setCount(Number(savedCount));
     if (savedPaid === "true") setPaid(true);
+
+    return () => {
+      listener.subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -55,7 +60,10 @@ export default function Home() {
   const locked = !paid && freeLeft <= 0;
 
   async function login() {
-    if (!email.trim()) return alert("Enter your email first.");
+    if (!email.trim()) {
+      alert("Enter your email first.");
+      return;
+    }
 
     const { error } = await supabase.auth.signInWithOtp({
       email,
@@ -64,11 +72,8 @@ export default function Home() {
       },
     });
 
-    if (error) {
-      alert(error.message);
-    } else {
-      alert("Check your email for the login link.");
-    }
+    if (error) alert(error.message);
+    else alert("Check your email for the login link.");
   }
 
   async function logout() {
@@ -77,7 +82,10 @@ export default function Home() {
   }
 
   function speak(text: string) {
+    if (typeof window === "undefined") return;
+    const voiceOn = localStorage.getItem("sora_voice") !== "false";
     if (!voiceOn) return;
+
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 0.95;
     utterance.pitch = 1;
@@ -107,7 +115,6 @@ export default function Home() {
       });
 
       const data = await res.json();
-
       const reply =
         data.reply ||
         "I'm here with you. Tell me what's really been weighing on you.";
@@ -145,10 +152,6 @@ export default function Home() {
           >
             Send Login Link
           </button>
-
-          <p className="text-xs text-zinc-500 mt-4 text-center">
-            We’ll email you a secure magic login link.
-          </p>
         </div>
       </main>
     );
@@ -164,21 +167,12 @@ export default function Home() {
           </p>
         </div>
 
-        <div className="flex gap-2">
-          <button
-            onClick={() => setVoiceOn(!voiceOn)}
-            className="border border-white/20 px-4 py-2 rounded-full text-sm"
-          >
-            Voice {voiceOn ? "On" : "Off"}
-          </button>
-
-          <button
-            onClick={logout}
-            className="border border-white/20 px-4 py-2 rounded-full text-sm"
-          >
-            Logout
-          </button>
-        </div>
+        <button
+          onClick={logout}
+          className="border border-white/20 px-4 py-2 rounded-full text-sm"
+        >
+          Logout
+        </button>
       </header>
 
       <section className="flex-1 overflow-y-auto p-5 space-y-4">
@@ -218,9 +212,7 @@ export default function Home() {
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") sendMessage();
-          }}
+          onKeyDown={(e) => e.key === "Enter" && sendMessage()}
           disabled={locked}
           placeholder={locked ? "Upgrade to continue..." : "Talk to Sora..."}
           className="flex-1 bg-zinc-900 border border-white/10 rounded-xl px-4 py-4 text-white outline-none disabled:opacity-50"
