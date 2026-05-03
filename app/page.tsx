@@ -26,17 +26,15 @@ export default function Home() {
   const [paid, setPaid] = useState(false);
   const [count, setCount] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [voiceOn, setVoiceOn] = useState(true);
+  const [listening, setListening] = useState(false);
 
   useEffect(() => {
-    supabase.auth.getUser().then(({ data }) => {
-      setUser(data.user);
-    });
+    supabase.auth.getUser().then(({ data }) => setUser(data.user));
 
-    const { data: listener } = supabase.auth.onAuthStateChange(
-      (_event, session) => {
-        setUser(session?.user ?? null);
-      }
-    );
+    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
 
     const savedMessages = localStorage.getItem("sora_messages");
     const savedCount = localStorage.getItem("sora_count");
@@ -46,9 +44,7 @@ export default function Home() {
     if (savedCount) setCount(Number(savedCount));
     if (savedPaid === "true") setPaid(true);
 
-    return () => {
-      listener.subscription.unsubscribe();
-    };
+    return () => data.subscription.unsubscribe();
   }, []);
 
   useEffect(() => {
@@ -60,16 +56,11 @@ export default function Home() {
   const locked = !paid && freeLeft <= 0;
 
   async function login() {
-    if (!email.trim()) {
-      alert("Enter your email first.");
-      return;
-    }
+    if (!email.trim()) return alert("Enter your email first.");
 
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: {
-        emailRedirectTo: window.location.origin,
-      },
+      options: { emailRedirectTo: window.location.origin },
     });
 
     if (error) alert(error.message);
@@ -82,15 +73,40 @@ export default function Home() {
   }
 
   function speak(text: string) {
-    if (typeof window === "undefined") return;
-    const voiceOn = localStorage.getItem("sora_voice") !== "false";
     if (!voiceOn) return;
-
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = 0.95;
     utterance.pitch = 1;
     speechSynthesis.cancel();
     speechSynthesis.speak(utterance);
+  }
+
+  function startListening() {
+    const SpeechRecognition =
+      (window as any).SpeechRecognition ||
+      (window as any).webkitSpeechRecognition;
+
+    if (!SpeechRecognition) {
+      alert("Speech recognition is not supported on this browser.");
+      return;
+    }
+
+    const recognition = new SpeechRecognition();
+    recognition.lang = "en-US";
+    recognition.interimResults = false;
+    recognition.continuous = false;
+
+    recognition.onstart = () => setListening(true);
+
+    recognition.onresult = (event: any) => {
+      const text = event.results[0][0].transcript;
+      setInput(text);
+    };
+
+    recognition.onerror = () => setListening(false);
+    recognition.onend = () => setListening(false);
+
+    recognition.start();
   }
 
   async function sendMessage() {
@@ -115,6 +131,7 @@ export default function Home() {
       });
 
       const data = await res.json();
+
       const reply =
         data.reply ||
         "I'm here with you. Tell me what's really been weighing on you.";
@@ -132,8 +149,8 @@ export default function Home() {
 
   if (!user) {
     return (
-      <main className="min-h-screen bg-gradient-to-b from-black via-zinc-950 to-zinc-900 text-white flex items-center justify-center p-6">
-        <div className="w-full max-w-md bg-zinc-900 border border-white/10 rounded-3xl p-8 shadow-2xl">
+      <main className="min-h-screen bg-black text-white flex items-center justify-center p-6">
+        <div className="w-full max-w-md bg-zinc-900 border border-white/10 rounded-3xl p-8">
           <h1 className="text-4xl font-bold mb-3">Sora</h1>
           <p className="text-zinc-400 mb-6">
             Someone to talk to without judgment.
@@ -143,7 +160,7 @@ export default function Home() {
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="Enter your email"
-            className="w-full bg-black border border-white/10 rounded-xl px-4 py-4 text-white outline-none mb-4"
+            className="w-full bg-black border border-white/10 rounded-xl px-4 py-4 text-white mb-4"
           />
 
           <button
@@ -158,7 +175,7 @@ export default function Home() {
   }
 
   return (
-    <main className="min-h-screen bg-gradient-to-b from-black via-zinc-950 to-zinc-900 text-white flex flex-col">
+    <main className="min-h-screen bg-black text-white flex flex-col">
       <header className="p-5 border-b border-white/10 flex justify-between items-center">
         <div>
           <h1 className="text-3xl font-bold">Sora</h1>
@@ -167,19 +184,28 @@ export default function Home() {
           </p>
         </div>
 
-        <button
-          onClick={logout}
-          className="border border-white/20 px-4 py-2 rounded-full text-sm"
-        >
-          Logout
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setVoiceOn(!voiceOn)}
+            className="border border-white/20 px-4 py-2 rounded-full text-sm"
+          >
+            Voice {voiceOn ? "On" : "Off"}
+          </button>
+
+          <button
+            onClick={logout}
+            className="border border-white/20 px-4 py-2 rounded-full text-sm"
+          >
+            Logout
+          </button>
+        </div>
       </header>
 
       <section className="flex-1 overflow-y-auto p-5 space-y-4">
         {messages.map((m, i) => (
           <div
             key={i}
-            className={`max-w-2xl px-5 py-4 rounded-2xl shadow ${
+            className={`max-w-2xl px-5 py-4 rounded-2xl ${
               m.role === "user"
                 ? "ml-auto bg-white text-black"
                 : "mr-auto bg-zinc-900 border border-white/10"
@@ -189,13 +215,11 @@ export default function Home() {
           </div>
         ))}
 
-        {loading && (
-          <div className="text-zinc-500 text-sm">Sora is thinking...</div>
-        )}
+        {loading && <p className="text-zinc-500">Sora is thinking...</p>}
       </section>
 
       {locked && (
-        <div className="p-4 border-t border-white/10 bg-zinc-950">
+        <div className="p-4 border-t border-white/10">
           <p className="text-center text-zinc-300 mb-3">
             You used your free messages. Upgrade to keep talking with Sora.
           </p>
@@ -209,13 +233,21 @@ export default function Home() {
       )}
 
       <div className="p-4 border-t border-white/10 flex gap-3">
+        <button
+          onClick={startListening}
+          disabled={locked}
+          className="bg-zinc-800 border border-white/10 rounded-xl px-4 disabled:opacity-50"
+        >
+          {listening ? "Listening..." : "🎙️"}
+        </button>
+
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && sendMessage()}
           disabled={locked}
           placeholder={locked ? "Upgrade to continue..." : "Talk to Sora..."}
-          className="flex-1 bg-zinc-900 border border-white/10 rounded-xl px-4 py-4 text-white outline-none disabled:opacity-50"
+          className="flex-1 bg-zinc-900 border border-white/10 rounded-xl px-4 py-4 text-white disabled:opacity-50"
         />
 
         <button
@@ -229,3 +261,4 @@ export default function Home() {
     </main>
   );
 }
+EOF
