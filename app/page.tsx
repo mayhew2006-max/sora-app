@@ -8,63 +8,42 @@ const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 );
 
-const STRIPE_LINK = "https://buy.stripe.com/14A3cw1AZfbD2bM6Pc1gs00";
-const FREE_LIMIT = 20;
-
-type Message = {
-  role: "user" | "assistant";
-  content: string;
-};
-
 export default function Home() {
   const [user, setUser] = useState<any>(null);
   const [email, setEmail] = useState("");
-  const [messages, setMessages] = useState<Message[]>([
-    { role: "assistant", content: "Hey, I'm here. What's on your mind?" },
+  const [messages, setMessages] = useState<any[]>([
+    { role: "assistant", content: "Hey, I'm here. What's on your mind?" }
   ]);
   const [input, setInput] = useState("");
-  const [paid, setPaid] = useState(false);
-  const [count, setCount] = useState(0);
-  const [loading, setLoading] = useState(false);
-  const [voiceOn, setVoiceOn] = useState(true);
   const [listening, setListening] = useState(false);
 
   useEffect(() => {
     supabase.auth.getUser().then(({ data }) => setUser(data.user));
 
-    const { data } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user ?? null);
-    });
+    const { data: listener } = supabase.auth.onAuthStateChange(
+      (_event, session) => {
+        setUser(session?.user ?? null);
+      }
+    );
 
-    const savedMessages = localStorage.getItem("sora_messages");
-    const savedCount = localStorage.getItem("sora_count");
-    const savedPaid = localStorage.getItem("sora_paid");
-
-    if (savedMessages) setMessages(JSON.parse(savedMessages));
-    if (savedCount) setCount(Number(savedCount));
-    if (savedPaid === "true") setPaid(true);
-
-    return () => data.subscription.unsubscribe();
+    return () => listener.subscription.unsubscribe();
   }, []);
 
-  useEffect(() => {
-    localStorage.setItem("sora_messages", JSON.stringify(messages));
-    localStorage.setItem("sora_count", String(count));
-  }, [messages, count]);
-
-  const freeLeft = Math.max(FREE_LIMIT - count, 0);
-  const locked = !paid && freeLeft <= 0;
-
   async function login() {
-    if (!email.trim()) return alert("Enter your email first.");
+    if (!email.trim()) {
+      alert("Enter your email first.");
+      return;
+    }
 
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: window.location.origin },
+      options: {
+        emailRedirectTo: window.location.origin,
+      },
     });
 
     if (error) alert(error.message);
-    else alert("Check your email for the login link.");
+    else alert("Check your email for login link.");
   }
 
   async function logout() {
@@ -72,13 +51,17 @@ export default function Home() {
     setUser(null);
   }
 
-  function speak(text: string) {
-    if (!voiceOn) return;
-    const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = 0.95;
-    utterance.pitch = 1;
-    speechSynthesis.cancel();
-    speechSynthesis.speak(utterance);
+  async function sendMessage() {
+    if (!input.trim()) return;
+
+    const newMessages = [...messages, { role: "user", content: input }];
+    setMessages(newMessages);
+    setInput("");
+
+    const reply =
+      "I'm here with you. Tell me what's really been weighing on you.";
+
+    setMessages([...newMessages, { role: "assistant", content: reply }]);
   }
 
   function startListening() {
@@ -87,85 +70,41 @@ export default function Home() {
       (window as any).webkitSpeechRecognition;
 
     if (!SpeechRecognition) {
-      alert("Speech recognition is not supported on this browser.");
+      alert("Speech recognition not supported.");
       return;
     }
 
     const recognition = new SpeechRecognition();
     recognition.lang = "en-US";
-    recognition.interimResults = false;
-    recognition.continuous = false;
 
     recognition.onstart = () => setListening(true);
+    recognition.onend = () => setListening(false);
 
     recognition.onresult = (event: any) => {
       const text = event.results[0][0].transcript;
       setInput(text);
     };
 
-    recognition.onerror = () => setListening(false);
-    recognition.onend = () => setListening(false);
-
     recognition.start();
   }
 
-  async function sendMessage() {
-    const text = input.trim();
-    if (!text || loading || locked) return;
-
-    const newMessages: Message[] = [
-      ...messages,
-      { role: "user", content: text },
-    ];
-
-    setInput("");
-    setMessages(newMessages);
-    setCount((prev) => prev + 1);
-    setLoading(true);
-
-    try {
-      const res = await fetch("/api/chat", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ messages: newMessages }),
-      });
-
-      const data = await res.json();
-
-      const reply =
-        data.reply ||
-        "I'm here with you. Tell me what's really been weighing on you.";
-
-      setMessages([...newMessages, { role: "assistant", content: reply }]);
-      speak(reply);
-    } catch {
-      const fallback = "Something glitched, but I'm still here with you.";
-      setMessages([...newMessages, { role: "assistant", content: fallback }]);
-      speak(fallback);
-    }
-
-    setLoading(false);
-  }
-
+  // 🔐 LOGIN SCREEN
   if (!user) {
     return (
-      <main className="min-h-screen bg-black text-white flex items-center justify-center p-6">
-        <div className="w-full max-w-md bg-zinc-900 border border-white/10 rounded-3xl p-8">
-          <h1 className="text-4xl font-bold mb-3">Sora</h1>
-          <p className="text-zinc-400 mb-6">
-            Someone to talk to without judgment.
-          </p>
+      <main className="min-h-screen flex items-center justify-center bg-black text-white">
+        <div className="p-6 bg-zinc-900 rounded-xl w-full max-w-sm">
+          <h1 className="text-xl mb-4">Login</h1>
 
           <input
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="Enter your email"
-            className="w-full bg-black border border-white/10 rounded-xl px-4 py-4 text-white mb-4"
+            className="w-full p-2 mb-4 bg-black border border-white/20"
           />
 
           <button
             onClick={login}
-            className="w-full bg-white text-black rounded-xl py-4 font-semibold"
+            className="w-full bg-white text-black p-2 rounded"
           >
             Send Login Link
           </button>
@@ -174,91 +113,39 @@ export default function Home() {
     );
   }
 
+  // 💬 CHAT UI
   return (
     <main className="min-h-screen bg-black text-white flex flex-col">
-      <header className="p-5 border-b border-white/10 flex justify-between items-center">
-        <div>
-          <h1 className="text-3xl font-bold">Sora</h1>
-          <p className="text-sm text-zinc-400">
-            {paid ? "Premium unlocked" : `${freeLeft} free messages left`}
-          </p>
-        </div>
-
-        <div className="flex gap-2">
-          <button
-            onClick={() => setVoiceOn(!voiceOn)}
-            className="border border-white/20 px-4 py-2 rounded-full text-sm"
-          >
-            Voice {voiceOn ? "On" : "Off"}
-          </button>
-
-          <button
-            onClick={logout}
-            className="border border-white/20 px-4 py-2 rounded-full text-sm"
-          >
-            Logout
-          </button>
-        </div>
+      <header className="p-4 flex justify-between border-b border-white/10">
+        <h1>Sora</h1>
+        <button onClick={logout}>Logout</button>
       </header>
 
-      <section className="flex-1 overflow-y-auto p-5 space-y-4">
+      <div className="flex-1 p-4 space-y-2 overflow-y-auto">
         {messages.map((m, i) => (
           <div
             key={i}
-            className={`max-w-2xl px-5 py-4 rounded-2xl ${
-              m.role === "user"
-                ? "ml-auto bg-white text-black"
-                : "mr-auto bg-zinc-900 border border-white/10"
-            }`}
+            className={m.role === "user" ? "text-right" : "text-left"}
           >
             {m.content}
           </div>
         ))}
+      </div>
 
-        {loading && <p className="text-zinc-500">Sora is thinking...</p>}
-      </section>
-
-      {locked && (
-        <div className="p-4 border-t border-white/10">
-          <p className="text-center text-zinc-300 mb-3">
-            You used your free messages. Upgrade to keep talking with Sora.
-          </p>
-          <a
-            href={STRIPE_LINK}
-            className="block text-center bg-white text-black py-4 rounded-xl font-semibold"
-          >
-            Upgrade Now
-          </a>
-        </div>
-      )}
-
-      <div className="p-4 border-t border-white/10 flex gap-3">
-        <button
-          onClick={startListening}
-          disabled={locked}
-          className="bg-zinc-800 border border-white/10 rounded-xl px-4 disabled:opacity-50"
-        >
-          {listening ? "Listening..." : "🎙️"}
-        </button>
-
+      <div className="p-4 flex gap-2">
         <input
           value={input}
           onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && sendMessage()}
-          disabled={locked}
-          placeholder={locked ? "Upgrade to continue..." : "Talk to Sora..."}
-          className="flex-1 bg-zinc-900 border border-white/10 rounded-xl px-4 py-4 text-white disabled:opacity-50"
+          className="flex-1 p-2 bg-zinc-800"
+          placeholder="Talk to Sora..."
         />
 
-        <button
-          onClick={sendMessage}
-          disabled={locked}
-          className="bg-white text-black rounded-xl px-6 font-semibold disabled:opacity-50"
-        >
-          Send
+        <button onClick={sendMessage}>Send</button>
+
+        <button onClick={startListening}>
+          {listening ? "Listening..." : "🎤"}
         </button>
       </div>
     </main>
   );
 }
-EOF
