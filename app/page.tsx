@@ -1,7 +1,12 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { supabase } from "@/lib/supabase";
+import { createClient } from "@supabase/supabase-js";
+
+const supabase = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+);
 
 const STRIPE_LINK = "https://buy.stripe.com/14A3cw1AZfbD2bM6Pc1gs00";
 const FREE_LIMIT = 20;
@@ -28,6 +33,10 @@ export default function Home() {
       setUser(data.user);
     });
 
+    supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user ?? null);
+    });
+
     const savedMessages = localStorage.getItem("sora_messages");
     const savedCount = localStorage.getItem("sora_count");
     const savedPaid = localStorage.getItem("sora_paid");
@@ -46,16 +55,20 @@ export default function Home() {
   const locked = !paid && freeLeft <= 0;
 
   async function login() {
-    if (!email.trim()) return;
+    if (!email.trim()) return alert("Enter your email first.");
 
-    await supabase.auth.signInWithOtp({
+    const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
         emailRedirectTo: window.location.origin,
       },
     });
 
-    alert("Check your email for the login link.");
+    if (error) {
+      alert(error.message);
+    } else {
+      alert("Check your email for the login link.");
+    }
   }
 
   async function logout() {
