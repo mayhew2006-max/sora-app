@@ -1,8 +1,9 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { supabase } from "@/lib/supabase";
 
-const STRIPE_LINK = "https://buy.stripe.com/3cI4gAcfD3sVaIiflI1gs02";
+const STRIPE_LINK = "https://buy.stripe.com/14A3cw1AZfbD2bM6Pc1gs00";
 const FREE_LIMIT = 20;
 
 type Message = {
@@ -11,6 +12,8 @@ type Message = {
 };
 
 export default function Home() {
+  const [user, setUser] = useState<any>(null);
+  const [email, setEmail] = useState("");
   const [messages, setMessages] = useState<Message[]>([
     { role: "assistant", content: "Hey, I'm here. What's on your mind?" },
   ]);
@@ -21,6 +24,10 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
+    supabase.auth.getUser().then(({ data }) => {
+      setUser(data.user);
+    });
+
     const savedMessages = localStorage.getItem("sora_messages");
     const savedCount = localStorage.getItem("sora_count");
     const savedPaid = localStorage.getItem("sora_paid");
@@ -37,6 +44,24 @@ export default function Home() {
 
   const freeLeft = Math.max(FREE_LIMIT - count, 0);
   const locked = !paid && freeLeft <= 0;
+
+  async function login() {
+    if (!email.trim()) return;
+
+    await supabase.auth.signInWithOtp({
+      email,
+      options: {
+        emailRedirectTo: window.location.origin,
+      },
+    });
+
+    alert("Check your email for the login link.");
+  }
+
+  async function logout() {
+    await supabase.auth.signOut();
+    setUser(null);
+  }
 
   function speak(text: string) {
     if (!voiceOn) return;
@@ -69,6 +94,7 @@ export default function Home() {
       });
 
       const data = await res.json();
+
       const reply =
         data.reply ||
         "I'm here with you. Tell me what's really been weighing on you.";
@@ -84,6 +110,37 @@ export default function Home() {
     setLoading(false);
   }
 
+  if (!user) {
+    return (
+      <main className="min-h-screen bg-gradient-to-b from-black via-zinc-950 to-zinc-900 text-white flex items-center justify-center p-6">
+        <div className="w-full max-w-md bg-zinc-900 border border-white/10 rounded-3xl p-8 shadow-2xl">
+          <h1 className="text-4xl font-bold mb-3">Sora</h1>
+          <p className="text-zinc-400 mb-6">
+            Someone to talk to without judgment.
+          </p>
+
+          <input
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
+            placeholder="Enter your email"
+            className="w-full bg-black border border-white/10 rounded-xl px-4 py-4 text-white outline-none mb-4"
+          />
+
+          <button
+            onClick={login}
+            className="w-full bg-white text-black rounded-xl py-4 font-semibold"
+          >
+            Send Login Link
+          </button>
+
+          <p className="text-xs text-zinc-500 mt-4 text-center">
+            We’ll email you a secure magic login link.
+          </p>
+        </div>
+      </main>
+    );
+  }
+
   return (
     <main className="min-h-screen bg-gradient-to-b from-black via-zinc-950 to-zinc-900 text-white flex flex-col">
       <header className="p-5 border-b border-white/10 flex justify-between items-center">
@@ -94,12 +151,21 @@ export default function Home() {
           </p>
         </div>
 
-        <button
-          onClick={() => setVoiceOn(!voiceOn)}
-          className="border border-white/20 px-4 py-2 rounded-full text-sm"
-        >
-          Voice {voiceOn ? "On" : "Off"}
-        </button>
+        <div className="flex gap-2">
+          <button
+            onClick={() => setVoiceOn(!voiceOn)}
+            className="border border-white/20 px-4 py-2 rounded-full text-sm"
+          >
+            Voice {voiceOn ? "On" : "Off"}
+          </button>
+
+          <button
+            onClick={logout}
+            className="border border-white/20 px-4 py-2 rounded-full text-sm"
+          >
+            Logout
+          </button>
+        </div>
       </header>
 
       <section className="flex-1 overflow-y-auto p-5 space-y-4">
